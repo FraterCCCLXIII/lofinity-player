@@ -16,17 +16,8 @@ import img6 from "@/assets/pexels-luisfe-5191926.jpg";
 import img7 from "@/assets/pexels-alberlan-7311921.jpg";
 import img8 from "@/assets/pexels-sliceisop-2873669.jpg";
 
-// Track image mapping (first image from each track's set)
-const trackImages = [
-  img2,  // Track 1: "What is Non-Duality?"
-  img1,  // Track 2: "What is Ego Death?"
-  img5,  // Track 3: "The Four Selves"
-  img4,  // Track 4: "Rational Idealism"
-  img6,  // Track 5: "Realisation and Transformation"
-  img3,  // Track 6: "Realigning the Soul"
-  img7,  // Track 7: "The Evolution of Nonduality"
-  img8   // Track 8: "The Edge of Evolution"
-];
+// Image pool — cycled across all tracks
+const trackImagePool = [img2, img1, img5, img4, img6, img3, img7, img8];
 
 interface Track {
   id: string;
@@ -75,22 +66,40 @@ export function TrackDrawer({
 
   const getTrackSlug = (trackIndex: number) => {
     const trackSlugs = [
-      "what-is-ego-death",
-      "what-is-non-duality", 
-      "the-four-selves",
-      "realisation-and-transformation",
-      "the-evolution-of-nonduality",
-      "the-edge-of-evolution",
-      "realigning-the-soul",
-      "rational-idealism"
+      "breath-between-the-worlds",
+      "celestia-i",
+      "celestia-ii",
+      "driving-111",
+      "eros-orchard",
+      "in-reach-of-meaning",
+      "knocking-at-heaven",
+      "kosmographica",
+      "life-is-vibration",
+      "light-in-mind",
+      "maxsoft",
+      "nondualizer",
+      "on-the-temple-roof",
+      "orbitron",
+      "outworld",
+      "panentheon",
+      "putting-down",
+      "rainbow-arrows",
+      "rewinding-time",
+      "signals-from-somewhere",
+      "starfields-in-bloom",
+      "stone-circuits",
+      "stratomind",
+      "textures-of-feelings",
+      "there-is-a-voice-in-you",
+      "iki-ga-aru",
     ];
-    return trackSlugs[trackIndex] || "what-is-ego-death";
+    return trackSlugs[trackIndex] || "breath-between-the-worlds";
   };
 
   const handleShare = (trackIndex: number, trackTitle: string) => {
     const trackSlug = getTrackSlug(trackIndex);
     const trackUrl = `${window.location.origin}/track/${trackSlug}`;
-    const text = `Listen to "${trackTitle}" with Andrew Cohen`;
+    const text = `Listen to "${trackTitle}" on Lofinity`;
     
     // Track share event
     const shareMethod = navigator.share ? 'native_share' : 'clipboard';
@@ -111,12 +120,7 @@ export function TrackDrawer({
 
 
   const navigationLinks = [
-    { name: "Life", slug: "life" },
-    { name: "Teachings", slug: "teachings" },
-    { name: "Books", slug: "books" },
-    { name: "Archive", slug: "archive" },
-    { name: "Engage", slug: "engage" },
-    { name: "Contact", slug: "contact" },
+    // { name: "Contact", slug: "contact" },
   ];
 
   const handleNavigationClick = (slug: string) => {
@@ -157,10 +161,10 @@ export function TrackDrawer({
             <div className="flex items-center justify-between p-4 md:p-6 border-b border-white/10 flex-shrink-0">
               <div className="flex flex-col">
                 <div className="flex items-center gap-2">
-                  <h2 className="text-xl font-bold text-white font-sans">Nondualize</h2>
+                  <h2 className="text-xl font-bold text-white font-sans">Lofinity</h2>
                   <span className="text-[10px] font-medium text-white/60 bg-white/10 px-1.5 py-0.5 rounded">BETA</span>
                 </div>
-                <p className="text-xs text-white/70 mt-1 font-light">Integral Nonduality for an Evolving World</p>
+                <p className="text-xs text-white/70 mt-1 font-light">Lofi Hip Hop · Chill Beats</p>
               </div>
               <Button
                 variant="ghost"
@@ -214,7 +218,7 @@ export function TrackDrawer({
                         {/* Image Square */}
                         <div className="flex-shrink-0 w-12 h-12 bg-gradient-to-br from-purple-500/20 to-blue-500/20 rounded-lg border border-white/10 flex items-center justify-center">
                           <img
-                            src={trackImages[index]}
+                            src={trackImagePool[index % trackImagePool.length]}
                             alt={`Track ${index + 1} image`}
                             className="w-full h-full object-cover rounded-md"
                           />
@@ -224,7 +228,7 @@ export function TrackDrawer({
                           <h3 className="text-sm font-medium text-white mb-1">
                             {track.title}
                           </h3>
-                          <p className="text-xs text-white/60 mb-2 line-clamp-2">
+                          <p className="text-xs text-white/60 mb-1 line-clamp-2">
                             {track.description}
                           </p>
                           <div className="flex items-center justify-between">

@@ -61,6 +61,13 @@ export const PERFORMANCE_EVENTS = {
   TRACK_SWITCH_TIME: 'track_switch_time',
 } as const;
 
+// Page view events
+export const PAGE_EVENTS = {
+  TRACK_PAGE_VIEW: 'track_page_view',
+  HOME_PAGE_VIEW: 'home_page_view',
+  NOT_FOUND_PAGE_VIEW: 'not_found_page_view',
+} as const;
+
 // Check if gtag is available
 const isGtagAvailable = (): boolean => {
   return typeof window !== 'undefined' && typeof window.gtag === 'function';
@@ -305,6 +312,89 @@ export const trackUserEngagement = (action: string, details: Record<string, any>
     category: ANALYTICS_CATEGORIES.UI,
     label: action,
     ...details,
+  });
+};
+
+// Page view tracking functions
+export const trackTrackPageView = (
+  trackTitle: string,
+  trackSlug: string,
+  trackIndex: number,
+  duration?: number
+) => {
+  // Track custom page view event
+  trackEvent(PAGE_EVENTS.TRACK_PAGE_VIEW, {
+    category: ANALYTICS_CATEGORIES.NAVIGATION,
+    label: trackTitle,
+    track_title: trackTitle,
+    track_slug: trackSlug,
+    track_index: trackIndex,
+    track_duration: duration,
+    page_path: `/track/${trackSlug}`,
+  });
+
+  // Also send a standard page view to GA4
+  if (isGtagAvailable()) {
+    try {
+      window.gtag('config', 'G-BRVLR3TZPQ', {
+        page_title: `${trackTitle} - Andrew Visions Zen`,
+        page_location: `${window.location.origin}/track/${trackSlug}`,
+        custom_map: {
+          track_title: trackTitle,
+          track_slug: trackSlug,
+          track_index: trackIndex,
+          track_duration: duration,
+        },
+      });
+    } catch (error) {
+      console.error('Analytics page view error:', error);
+    }
+  }
+};
+
+export const trackHomePageView = () => {
+  trackEvent(PAGE_EVENTS.HOME_PAGE_VIEW, {
+    category: ANALYTICS_CATEGORIES.NAVIGATION,
+    page_path: '/',
+  });
+
+  if (isGtagAvailable()) {
+    try {
+      window.gtag('config', 'G-BRVLR3TZPQ', {
+        page_title: 'Andrew Visions Zen - Meditation and Spiritual Teachings',
+        page_location: window.location.origin,
+      });
+    } catch (error) {
+      console.error('Analytics page view error:', error);
+    }
+  }
+};
+
+export const trackNotFoundPageView = (path: string) => {
+  trackEvent(PAGE_EVENTS.NOT_FOUND_PAGE_VIEW, {
+    category: ANALYTICS_CATEGORIES.NAVIGATION,
+    label: path,
+    page_path: path,
+  });
+};
+
+// Enhanced audio tracking with page context
+export const trackAudioPlayWithContext = (
+  trackTitle: string,
+  trackSlug: string,
+  trackIndex: number,
+  duration?: number,
+  source: 'page_load' | 'user_click' | 'auto_play' = 'user_click'
+) => {
+  trackEvent(AUDIO_EVENTS.PLAY, {
+    category: ANALYTICS_CATEGORIES.AUDIO,
+    label: trackTitle,
+    track_title: trackTitle,
+    track_slug: trackSlug,
+    track_index: trackIndex,
+    track_duration: duration,
+    play_source: source,
+    page_path: `/track/${trackSlug}`,
   });
 };
 

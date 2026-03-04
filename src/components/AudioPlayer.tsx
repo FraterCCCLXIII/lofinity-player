@@ -1,5 +1,5 @@
 import { useState, useRef, useEffect, useCallback } from "react";
-import { Play, Pause, SkipBack, SkipForward, Menu, Volume2, VolumeX, Music, Square, Subtitles, Share2 } from "lucide-react";
+import { Play, Pause, SkipBack, SkipForward, Menu, Volume2, Share2, Shuffle, Repeat } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Slider } from "@/components/ui/slider";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
@@ -8,7 +8,7 @@ import { BackgroundSlideshow } from "./BackgroundSlideshow";
 import { CaptionOverlay } from "./CaptionOverlay";
 import { ShareModal } from "./ShareModal";
 import { WelcomeModal } from "./WelcomeModal";
-import { parseSrtFile, type Caption } from "@/lib/utils";
+import { type Caption } from "@/lib/utils";
 import { useNavigate } from "react-router-dom";
 import {
   trackAudioPlay,
@@ -17,14 +17,11 @@ import {
   trackTrackSelect,
   trackSeek,
   trackVolumeChange,
-  trackBackgroundMusicPlay,
-  trackBackgroundMusicPause,
-  trackBackgroundMusicChange,
-  trackCaptionsToggle,
   trackAudioShare,
   trackAudioError,
   trackAudioLoadTime,
   trackTrackSwitchTime,
+  trackAudioPlayWithContext,
 } from "@/lib/analytics";
 
 // Extend Window interface for mobile Safari detection timeout
@@ -98,127 +95,192 @@ interface Track {
 const mockTracks: Track[] = [
   {
     id: "1",
-    title: "What is Non-Duality?",
-    description: "Understanding the fundamental unity of existence beyond the illusion of separation",
-    duration: 4140, // ~69 minutes
-    audioUrl: "/audio/What is Nonduality.m4a",
-    defaultBackgroundMusic: "bg1" // Expansion
+    title: "Breath Between The Worlds",
+    description: "The liminal rhythm where inhale becomes exhale, and two dimensions press softly together at the seam.",
+    duration: 188,
+    audioUrl: "/audio/Breath Between The Worlds.mp3",
   },
   {
     id: "2",
-    title: "What is Ego Death?",
-    description: "Exploring the profound dissolution of the separate self and the awakening to true consciousness",
-    duration: 3900, // ~65 minutes
-    audioUrl: "/audio/What is Ego Death.m4a",
-    defaultBackgroundMusic: "bg2" // Aura
+    title: "Celestia I",
+    description: "First passage through the outer vault — light bending around ancient stars as consciousness unfolds toward the infinite.",
+    duration: 469,
+    audioUrl: "/audio/Celestia I.mp3",
   },
   {
     id: "3",
-    title: "The Four Selves",
-    description: "A deep exploration of the different levels of self and their transformation through spiritual practice",
-    duration: 4740, // ~79 minutes
-    audioUrl: "/audio/The Four Selves.m4a",
-    defaultBackgroundMusic: "bg3" // Into Silence
+    title: "Celestia II",
+    description: "The second arc deeper into luminous fields, where the sky forgets its own edges and becomes pure frequency.",
+    duration: 244,
+    audioUrl: "/audio/Celestia II.mp3",
   },
   {
     id: "4",
-    title: "Rational Idealism",
-    description: "Bridging the gap between intellectual understanding and spiritual realization",
-    duration: 3420, // ~57 minutes
-    audioUrl: "/audio/Rational Idealism.m4a",
-    defaultBackgroundMusic: "bg4" // Resonance
+    title: "Driving 111",
+    description: "A hypnotic pulse through infinite corridors of neon and stardust, where velocity itself becomes a form of meditation.",
+    duration: 367,
+    audioUrl: "/audio/Driving 111.mp3",
   },
   {
     id: "5",
-    title: "Realisation and Transformation",
-    description: "The journey from intellectual understanding to embodied awakening and lasting change",
-    duration: 5640, // ~94 minutes
-    audioUrl: "/audio/Realization and Transformation.m4a",
-    defaultBackgroundMusic: "bg5" // Transcendence
+    title: "Eros Orchard",
+    description: "A garden blooming at the edge of desire and creation, where sacred fruit falls upward into the arms of the cosmos.",
+    duration: 230,
+    audioUrl: "/audio/Eros Orchard.mp3",
   },
   {
     id: "6",
-    title: "Realigning the Soul",
-    description: "The process of aligning our deepest essence with the highest truth and purpose",
-    duration: 4680, // ~78 minutes
-    audioUrl: "/audio/Realigning the Soul.m4a",
-    defaultBackgroundMusic: "bg6" // Luminescence
+    title: "In reach of meaning",
+    description: "Fingers outstretched toward the ineffable — that trembling, suspended moment just before understanding arrives.",
+    duration: 217,
+    audioUrl: "/audio/In reach of meaning.mp3",
   },
   {
     id: "7",
-    title: "The Evolution of Nonduality",
-    description: "How the understanding of oneness evolves and deepens through practice and insight",
-    duration: 5880, // ~98 minutes
-    audioUrl: "/audio/The Evolution of Nonduality.m4a",
-    defaultBackgroundMusic: "bg7" // Essence
+    title: "Knocking at Heaven",
+    description: "A gentle percussion against the membrane of the infinite, reverberating outward through galaxies waiting to open.",
+    duration: 203,
+    audioUrl: "/audio/Knocking at Heaven.mp3",
   },
   {
     id: "8",
-    title: "The Edge of Evolution",
-    description: "Exploring the cutting edge of human consciousness and spiritual development",
-    duration: 4080, // ~68 minutes
-    audioUrl: "/audio/The Edge of Evolution.m4a",
-    defaultBackgroundMusic: "bg8" // Awakening
-  }
+    title: "Kosmographica",
+    description: "The living atlas of the universe — each beat a continent, each melody a star system charted in pure sound.",
+    duration: 317,
+    audioUrl: "/audio/Kosmographica.mp3",
+  },
+  {
+    id: "9",
+    title: "Life is Vibration",
+    description: "The fundamental truth humming beneath all matter — atoms, minds, and stars all singing the same secret frequency.",
+    duration: 323,
+    audioUrl: "/audio/Life is Vibration.mp3",
+  },
+  {
+    id: "10",
+    title: "Light in mind",
+    description: "Photons threading through neural corridors, illuminating the vast interior landscape of awareness one synapse at a time.",
+    duration: 264,
+    audioUrl: "/audio/Light in mind.mp3",
+  },
+  {
+    id: "11",
+    title: "Maxsoft",
+    description: "Texture at the threshold of touch and thought — the softest frequency the cosmos can whisper without dissolving into silence.",
+    duration: 214,
+    audioUrl: "/audio/Maxsoft.mp3",
+  },
+  {
+    id: "12",
+    title: "Nondualizer",
+    description: "A sonic dissolution of all boundaries, where subject and object merge into a single, seamless, flowing field.",
+    duration: 279,
+    audioUrl: "/audio/Nondualizer.mp3",
+  },
+  {
+    id: "13",
+    title: "On The Temple Roof",
+    description: "Above the sacred chamber, the stars press close enough to hear — devotion rising like incense smoke into the dark.",
+    duration: 282,
+    audioUrl: "/audio/On The Temple Roof.mp3",
+  },
+  {
+    id: "14",
+    title: "Orbitron",
+    description: "A precise and eternal mechanical orbit, gears turning inside planets turning inside the great clockwork of galaxies.",
+    duration: 230,
+    audioUrl: "/audio/Orbitron.mp3",
+  },
+  {
+    id: "15",
+    title: "Outworld",
+    description: "Beyond the edge of every map, where frequency becomes geography and sound becomes the terrain of unexplored dimensions.",
+    duration: 223,
+    audioUrl: "/audio/Outworld.mp3",
+  },
+  {
+    id: "16",
+    title: "Panentheon",
+    description: "A pantheon that holds all worlds within it — every deity a frequency, every prayer a waveform returned as melody.",
+    duration: 369,
+    audioUrl: "/audio/Panentheon.mp3",
+  },
+  {
+    id: "17",
+    title: "Putting down",
+    description: "The sacred art of release — setting down the weight of accumulated time and drifting into weightless, boundless presence.",
+    duration: 279,
+    audioUrl: "/audio/Putting down.mp3",
+  },
+  {
+    id: "18",
+    title: "Rainbow Arrows",
+    description: "Chromatic shafts of light launched across the sky, each wavelength a different prayer finding its mark in the dark.",
+    duration: 329,
+    audioUrl: "/audio/Rainbow Arrows.mp3",
+  },
+  {
+    id: "19",
+    title: "Rewinding Time",
+    description: "The tape unspools backward through memory, through birth, through stardust and the first silence before the first sound.",
+    duration: 196,
+    audioUrl: "/audio/Rewinding Time.mp3",
+  },
+  {
+    id: "20",
+    title: "Signals from Somewhere",
+    description: "Transmissions arriving from coordinates unknown — meaning encoded in the luminous space between notes.",
+    duration: 243,
+    audioUrl: "/audio/Signals from Somewhere.mp3",
+  },
+  {
+    id: "21",
+    title: "Starfields in Bloom",
+    description: "A garden of suns flowering across the dark, pollinated by wandering comets and the slow breath of cosmic wind.",
+    duration: 300,
+    audioUrl: "/audio/Starfields in Bloom.mp3",
+  },
+  {
+    id: "22",
+    title: "Stone Circuits",
+    description: "Ancient architecture pulsing with electricity — the lithic and the digital converging across a billion years of time.",
+    duration: 300,
+    audioUrl: "/audio/Stone Circuits.mp3",
+  },
+  {
+    id: "23",
+    title: "Stratomind",
+    description: "A mind expanded to the curvature of a stratosphere, dreaming in weather systems and tectonic whispers.",
+    duration: 268,
+    audioUrl: "/audio/Stratomind.mp3",
+  },
+  {
+    id: "24",
+    title: "Textures of feelings",
+    description: "The tactile surface of emotion — each sensation a different fabric woven from the threads of lived light.",
+    duration: 252,
+    audioUrl: "/audio/Textures of feelings.mp3",
+  },
+  {
+    id: "25",
+    title: "There is a voice in you",
+    description: "The inner resonance that never ceases — older than memory, quieter than silence, vaster than any sky.",
+    duration: 259,
+    audioUrl: "/audio/There is a voice in you.mp3",
+  },
+  {
+    id: "26",
+    title: "息がある。(Iki ga aru) — There is Breath",
+    description: "The Japanese art of breath as being — every exhalation a universe released, every inhalation a cosmos born.",
+    duration: 252,
+    audioUrl: "/audio/息がある。(Iki ga aru)  There is Breath.mp3",
+  },
 ];
 
-// Background music tracks
-const backgroundMusicTracks = [
-  {
-    id: "bg1",
-    title: "Expansion",
-    description: "A journey into infinite space and consciousness",
-    audioUrl: "/background-music/sunrise-meditation-369921.mp3"
-  },
-  {
-    id: "bg2",
-    title: "Aura",
-    description: "Radiant energy fields and subtle vibrations",
-    audioUrl: "/background-music/quiet-contemplation-meditation-283536.mp3"
-  },
-  {
-    id: "bg3",
-    title: "Into Silence",
-    description: "The profound depth of inner stillness",
-    audioUrl: "/background-music/autumn-sky-meditation-7618.mp3"
-  },
-  {
-    id: "bg4",
-    title: "Resonance",
-    description: "Harmonic frequencies that align the soul",
-    audioUrl: "/background-music/meditation-relax-sleep-music-346733.mp3"
-  },
-  {
-    id: "bg5",
-    title: "Transcendence",
-    description: "Beyond the boundaries of ordinary perception",
-    audioUrl: "/background-music/meditate-meditation-music-346429.mp3"
-  },
-  {
-    id: "bg6",
-    title: "Luminescence",
-    description: "The inner light that guides transformation",
-    audioUrl: "/background-music/meditation-yoga-relaxing-music-378307.mp3"
-  },
-  {
-    id: "bg7",
-    title: "Essence",
-    description: "The core truth that lies beneath all experience",
-    audioUrl: "/background-music/meditation-music-338902.mp3"
-  },
-  {
-    id: "bg8",
-    title: "Awakening",
-    description: "The moment when consciousness realizes itself",
-    audioUrl: "/background-music/meditation-music-322801.mp3"
-  },
-  {
-    id: "bg9",
-    title: "Unity",
-    description: "The seamless oneness of all existence",
-    audioUrl: "/background-music/meditation-yoga-relaxing-music-380330.mp3"
-  }
-];
+// macOS HFS+/APFS stores filenames in Unicode NFD (decomposed) form.
+// Browsers send URLs in NFC form, so the server can't match the file.
+// Normalizing to NFD before assigning audio.src makes the encoded bytes match.
+const resolveAudioUrl = (url: string): string => url.normalize('NFD');
 
 interface AudioPlayerProps {
   initialTrackIndex?: number;
@@ -246,6 +308,8 @@ export function AudioPlayer({ initialTrackIndex = 0 }: AudioPlayerProps) {
   const [hasUserInteracted, setHasUserInteracted] = useState(false);
   const [mobileSafariBottomPadding, setMobileSafariBottomPadding] = useState(0);
   const [isPageVisible, setIsPageVisible] = useState(true);
+  const [isShuffle, setIsShuffle] = useState(false);
+  const [isLoop, setIsLoop] = useState(false);
   const audioRef = useRef<HTMLAudioElement>(null);
   const backgroundAudioRef = useRef<HTMLAudioElement>(null);
   const gainNodeRef = useRef<GainNode | null>(null);
@@ -413,7 +477,7 @@ export function AudioPlayer({ initialTrackIndex = 0 }: AudioPlayerProps) {
     
     if (audio && !audio.src) {
       console.log('🎵 [AUDIO SYNC] Setting initial audio source and loading');
-      audio.src = track.audioUrl;
+      audio.src = resolveAudioUrl(track.audioUrl);
       audio.load();
       
       // Mobile browser optimization: preload metadata
@@ -536,8 +600,15 @@ export function AudioPlayer({ initialTrackIndex = 0 }: AudioPlayerProps) {
       });
       setIsPlaying(true);
       
-      // Track audio play event
-      trackAudioPlay(track.title, currentTrack, audio.duration);
+      // Track audio play event with enhanced context
+      const trackSlug = getTrackSlug(currentTrack);
+      trackAudioPlayWithContext(
+        track.title, 
+        trackSlug, 
+        currentTrack, 
+        audio.duration,
+        'user_click'
+      );
     };
     
     const handlePause = () => {
@@ -554,8 +625,16 @@ export function AudioPlayer({ initialTrackIndex = 0 }: AudioPlayerProps) {
     };
     
     const handleEnded = () => {
-      console.log('🎵 [AUDIO SYNC] ended event fired, calling handleNext(true)');
-      handleNext(true);
+      console.log('🎵 [AUDIO SYNC] ended event fired', { isShuffle, isLoop, currentTrack });
+      if (isShuffle) {
+        const randomIndex = getRandomNextTrack(currentTrack);
+        handleNext(true, randomIndex);
+      } else if (isLoop) {
+        handleNext(true);
+      } else if (currentTrack < mockTracks.length - 1) {
+        handleNext(true);
+      }
+      // else: last track with no loop/shuffle — stop naturally
     };
     
     const handleError = (e: Event) => {
@@ -615,7 +694,7 @@ export function AudioPlayer({ initialTrackIndex = 0 }: AudioPlayerProps) {
       audio.removeEventListener('canplay', handleCanPlay);
       audio.removeEventListener('canplaythrough', handleCanPlayThrough);
     };
-  }, [currentTrack]); // Removed isPlaying dependency to prevent listener recreation
+  }, [currentTrack, isShuffle, isLoop]); // Removed isPlaying dependency to prevent listener recreation
 
   // Handle background music playback and volume
   useEffect(() => {
@@ -774,56 +853,18 @@ export function AudioPlayer({ initialTrackIndex = 0 }: AudioPlayerProps) {
     };
   }, []);
 
-  // Auto-activate default background music for the first track on mount
-  // BUT ONLY if the user has started playing audio (hasUserInteracted)
-  useEffect(() => {
-    if (isBackgroundMusicPlaying && !backgroundMusic && hasUserInteracted) {
-      console.log('🎵 [AUDIO SYNC] Auto-activating background music after user interaction');
-      activateDefaultBackgroundMusic(0);
-    } else if (!hasUserInteracted) {
-      console.log('🎵 [AUDIO SYNC] Skipping auto-activation of background music - no user interaction yet');
-    }
-  }, [hasUserInteracted]); // Changed dependency to include hasUserInteracted
+  // Background music auto-activation disabled for Lofinity (pure music player)
+  // useEffect(() => {
+  //   if (isBackgroundMusicPlaying && !backgroundMusic && hasUserInteracted) {
+  //     activateDefaultBackgroundMusic(0);
+  //   }
+  // }, [hasUserInteracted]);
 
-  // Load captions for the current track
-  useEffect(() => {
-    const loadCaptions = async () => {
-      try {
-        // Map track indices to actual SRT file names
-        const srtFileMap = [
-          "Transcript-What-is-Nonduality-mp3.srt",        // Track 1: "What is Non-Duality?"
-          "Transcript-What-is-Ego-Death-mp3.srt",         // Track 2: "What is Ego Death?"
-          "Transcript-The-Four-Selves-mp3.srt",           // Track 3: "The Four Selves"
-          "Transcript-Rational-Idealism-mp3.srt",         // Track 4: "Rational Idealism"
-          "Transcript-Realization-and-Transformation-mp3.srt", // Track 5: "Realisation and Transformation"
-          "Transcript-Realigning-the-Soul-mp3.srt",       // Track 6: "Realigning the Soul"
-          "Transcript-The-Evolution-of-Nonduality-mp3.srt", // Track 7: "The Evolution of Nonduality"
-          "Transcript-The-Edge-of-Evolution-mp3.srt"      // Track 8: "The Edge of Evolution"
-        ];
-        
-        const srtFileName = srtFileMap[currentTrack];
-        if (srtFileName) {
-          const srtResponse = await fetch(`/transcripts/${srtFileName}`);
-          if (srtResponse.ok) {
-            const srtContent = await srtResponse.text();
-            // Check if the response is actually SRT content (not HTML from 404)
-            if (srtContent.includes('-->') && !srtContent.includes('<!DOCTYPE')) {
-              const captionData = parseSrtFile(srtContent);
-              setCaptions(captionData);
-              return;
-            }
-          }
-        }
-        
-        // No captions found
-        setCaptions([]);
-      } catch (error) {
-        setCaptions([]);
-      }
-    };
-
-    loadCaptions();
-  }, [currentTrack]);
+  // Captions disabled for Lofinity (pure music player)
+  // useEffect(() => {
+  //   const loadCaptions = async () => { ... };
+  //   loadCaptions();
+  // }, [currentTrack]);
 
 
 
@@ -945,8 +986,8 @@ export function AudioPlayer({ initialTrackIndex = 0 }: AudioPlayerProps) {
       // Set media metadata
       navigator.mediaSession.metadata = new MediaMetadata({
         title: track.title,
-        artist: 'Andrew Visions Zen',
-        album: 'Spiritual Teachings',
+        artist: 'Lofinity',
+        album: 'Lofi Hip Hop',
         artwork: [
           { src: '/android-chrome-192x192.png', sizes: '192x192', type: 'image/png' },
           { src: '/android-chrome-512x512.png', sizes: '512x512', type: 'image/png' }
@@ -973,12 +1014,12 @@ export function AudioPlayer({ initialTrackIndex = 0 }: AudioPlayerProps) {
 
       navigator.mediaSession.setActionHandler('previoustrack', () => {
         console.log('📱 [MEDIA SESSION] Previous track action triggered');
-        handlePrevious(false);
+        handlePrevious(isPlaying);
       });
 
       navigator.mediaSession.setActionHandler('nexttrack', () => {
         console.log('📱 [MEDIA SESSION] Next track action triggered');
-        handleNext(false);
+        handleNext(isPlaying);
       });
 
       navigator.mediaSession.setActionHandler('seekbackward', (details) => {
@@ -1121,18 +1162,23 @@ export function AudioPlayer({ initialTrackIndex = 0 }: AudioPlayerProps) {
     } else {
       console.log('🎵 [AUDIO SYNC] Starting audio playback');
       
-      // Ensure audio has the correct source and is loaded
-      if (audio.src !== track.audioUrl) {
+      // Ensure audio has the correct source.
+      // audio.src returns an absolute URL; compare decoded pathnames after NFD-normalizing
+      // both sides so macOS filesystem encoding (NFD) matches the URL bytes.
+      const resolvedUrl = resolveAudioUrl(track.audioUrl);
+      const currentPathname = audio.src
+        ? decodeURIComponent(new URL(audio.src).pathname)
+        : null;
+      if (currentPathname !== resolvedUrl) {
         console.log('🎵 [AUDIO SYNC] Audio source mismatch, updating:', {
           currentSrc: audio.src,
-          expectedSrc: track.audioUrl,
+          expectedSrc: resolvedUrl,
           timestamp: new Date().toISOString()
         });
-        audio.src = track.audioUrl;
+        audio.src = resolvedUrl;
         audio.load();
       }
 
-      // For mobile browsers, we need to ensure the audio is properly loaded and ready
       const playAudio = () => {
         console.log('🎵 [AUDIO SYNC] playAudio function called:', {
           audioReadyState: audio.readyState,
@@ -1141,15 +1187,18 @@ export function AudioPlayer({ initialTrackIndex = 0 }: AudioPlayerProps) {
           currentTimeState: currentTime,
           timestamp: new Date().toISOString()
         });
-        
-        // Force load the audio if it's not ready
-        if (audio.readyState < 2) {
-          console.log('🎵 [AUDIO SYNC] Audio not ready, forcing load');
+
+        // If the audio element is in an error state (e.g. 404 on initial preload),
+        // reset and reload with the correct NFD-normalized URL before attempting play.
+        if (audio.error) {
+          console.log('🎵 [AUDIO SYNC] Audio in error state, resetting src and reloading');
+          audio.src = resolveAudioUrl(track.audioUrl);
           audio.load();
         }
-        
-        // CRITICAL FIX: Preserve user's selected position when starting playback
-        // Only set audio.currentTime if it's different from the user's selected position
+
+        // Do NOT unconditionally call audio.load() here — calling it while a load
+        // is already in progress aborts the fetch and causes NotSupportedError.
+
         if (audio.currentTime !== currentTime) {
           console.log('🎵 [AUDIO SYNC] Setting audio position to user-selected time:', {
             audioCurrentTime: audio.currentTime,
@@ -1157,11 +1206,6 @@ export function AudioPlayer({ initialTrackIndex = 0 }: AudioPlayerProps) {
             timestamp: new Date().toISOString()
           });
           audio.currentTime = currentTime;
-        } else {
-          console.log('🎵 [AUDIO SYNC] Audio position already matches user selection:', {
-            currentTime: currentTime,
-            timestamp: new Date().toISOString()
-          });
         }
         
         setIsPlaying(true);
@@ -1184,24 +1228,31 @@ export function AudioPlayer({ initialTrackIndex = 0 }: AudioPlayerProps) {
             }
           }
           
-          // Background music activation is handled by the auto-activation useEffect
-          // No need to call activateDefaultBackgroundMusic here as it causes duplicate calls
           console.log('🎵 [AUDIO SYNC] Background music will sync with main audio via useEffect');
         }).catch((error) => {
           console.error('🎵 [AUDIO SYNC] Audio play failed in togglePlay:', error);
           setIsPlaying(false);
           
-          // On mobile, if play fails, try to load and play again
-          audio.load();
-          setTimeout(() => {
-            audio.play().then(() => {
-              console.log('🎵 [AUDIO SYNC] Audio retry successful in togglePlay');
-              setIsPlaying(true);
-            }).catch((retryError) => {
-              console.error('🎵 [AUDIO SYNC] Audio retry play failed in togglePlay:', retryError);
-              setIsPlaying(false);
-            });
-          }, 100);
+          // Retry once the audio is actually ready rather than forcing another load(),
+          // which would abort the in-progress fetch and repeat the error.
+          const retryPlay = () => {
+            audio.removeEventListener('canplay', retryPlay);
+            audio.play()
+              .then(() => {
+                console.log('🎵 [AUDIO SYNC] Audio retry successful in togglePlay');
+                setIsPlaying(true);
+              })
+              .catch((retryError) => {
+                console.error('🎵 [AUDIO SYNC] Audio retry play failed in togglePlay:', retryError);
+                setIsPlaying(false);
+              });
+          };
+
+          if (audio.readyState >= 2) {
+            retryPlay();
+          } else {
+            audio.addEventListener('canplay', retryPlay);
+          }
         });
       };
 
@@ -1233,7 +1284,7 @@ export function AudioPlayer({ initialTrackIndex = 0 }: AudioPlayerProps) {
     const audio = audioRef.current;
     if (audio) {
       // Set new audio source immediately
-      audio.src = mockTracks[newTrackIndex].audioUrl;
+      audio.src = resolveAudioUrl(mockTracks[newTrackIndex].audioUrl);
       audio.load();
       
       // Mark user interaction for mobile browsers
@@ -1283,8 +1334,10 @@ export function AudioPlayer({ initialTrackIndex = 0 }: AudioPlayerProps) {
     }
   };
 
-  const handleNext = (autoPlay: boolean = false) => {
-    const newTrackIndex = currentTrack === mockTracks.length - 1 ? 0 : currentTrack + 1;
+  const handleNext = (autoPlay: boolean = false, targetIndex?: number) => {
+    const newTrackIndex = targetIndex !== undefined
+      ? targetIndex
+      : (currentTrack === mockTracks.length - 1 ? 0 : currentTrack + 1);
     
     console.log('🎵 [AUDIO SYNC] handleNext called:', {
       autoPlay,
@@ -1327,7 +1380,7 @@ export function AudioPlayer({ initialTrackIndex = 0 }: AudioPlayerProps) {
     const audio = audioRef.current;
     if (audio) {
       // Set new audio source immediately
-      audio.src = mockTracks[newTrackIndex].audioUrl;
+      audio.src = resolveAudioUrl(mockTracks[newTrackIndex].audioUrl);
       audio.load();
       
       console.log('🎵 [AUDIO SYNC] Audio source set and loaded:', {
@@ -1507,7 +1560,8 @@ export function AudioPlayer({ initialTrackIndex = 0 }: AudioPlayerProps) {
       timestamp: new Date().toISOString()
     });
     
-    // Track track selection
+    // Track track selection with enhanced context
+    const trackSlug = getTrackSlug(trackIndex);
     trackTrackSelect(mockTracks[trackIndex].title, trackIndex);
     
     // Stop all audio immediately using centralized function
@@ -1521,7 +1575,7 @@ export function AudioPlayer({ initialTrackIndex = 0 }: AudioPlayerProps) {
     // Load the new track but don't auto-play
     const audio = audioRef.current;
     if (audio) {
-      const newAudioUrl = mockTracks[trackIndex].audioUrl;
+      const newAudioUrl = resolveAudioUrl(mockTracks[trackIndex].audioUrl);
       
       // Set the new audio source immediately
       audio.src = newAudioUrl;
@@ -1543,6 +1597,29 @@ export function AudioPlayer({ initialTrackIndex = 0 }: AudioPlayerProps) {
     const mins = Math.floor(seconds / 60);
     const secs = Math.floor(seconds % 60);
     return `${mins}:${secs.toString().padStart(2, '0')}`;
+  };
+
+  const getRandomNextTrack = (currentIndex: number): number => {
+    if (mockTracks.length <= 1) return 0;
+    let randomIndex: number;
+    do {
+      randomIndex = Math.floor(Math.random() * mockTracks.length);
+    } while (randomIndex === currentIndex);
+    return randomIndex;
+  };
+
+  const toggleShuffle = () => {
+    setIsShuffle(prev => {
+      if (!prev) setIsLoop(false);
+      return !prev;
+    });
+  };
+
+  const toggleLoop = () => {
+    setIsLoop(prev => {
+      if (!prev) setIsShuffle(false);
+      return !prev;
+    });
   };
 
   const handleVolumeChange = (value: number[]) => {
@@ -1711,16 +1788,34 @@ export function AudioPlayer({ initialTrackIndex = 0 }: AudioPlayerProps) {
 
   const getTrackSlug = (trackIndex: number) => {
     const trackSlugs = [
-      "what-is-ego-death",
-      "what-is-non-duality", 
-      "the-four-selves",
-      "realisation-and-transformation",
-      "the-evolution-of-nonduality",
-      "the-edge-of-evolution",
-      "realigning-the-soul",
-      "rational-idealism"
+      "breath-between-the-worlds",
+      "celestia-i",
+      "celestia-ii",
+      "driving-111",
+      "eros-orchard",
+      "in-reach-of-meaning",
+      "knocking-at-heaven",
+      "kosmographica",
+      "life-is-vibration",
+      "light-in-mind",
+      "maxsoft",
+      "nondualizer",
+      "on-the-temple-roof",
+      "orbitron",
+      "outworld",
+      "panentheon",
+      "putting-down",
+      "rainbow-arrows",
+      "rewinding-time",
+      "signals-from-somewhere",
+      "starfields-in-bloom",
+      "stone-circuits",
+      "stratomind",
+      "textures-of-feelings",
+      "there-is-a-voice-in-you",
+      "iki-ga-aru",
     ];
-    return trackSlugs[trackIndex] || "what-is-ego-death";
+    return trackSlugs[trackIndex] || "breath-between-the-worlds";
   };
 
   // Update URL when track changes
@@ -1734,12 +1829,12 @@ export function AudioPlayer({ initialTrackIndex = 0 }: AudioPlayerProps) {
       {/* Background Slideshow */}
       <BackgroundSlideshow trackIndex={currentTrack} isTransitioning={isTransitioning} />
 
-      {/* Caption Overlay */}
-      <CaptionOverlay 
+      {/* Caption Overlay — disabled for Lofinity */}
+      {/* <CaptionOverlay
         isActive={isCaptionsActive}
         currentTime={currentTime}
         captions={captions}
-      />
+      /> */}
 
 
 
@@ -1768,7 +1863,7 @@ export function AudioPlayer({ initialTrackIndex = 0 }: AudioPlayerProps) {
       {/* Audio Element */}
       <audio 
         ref={audioRef} 
-        src={track.audioUrl} 
+        src={resolveAudioUrl(track.audioUrl)} 
         preload="auto"
         crossOrigin="anonymous"
         playsInline
@@ -1783,18 +1878,18 @@ export function AudioPlayer({ initialTrackIndex = 0 }: AudioPlayerProps) {
         }}
       />
       
-      {/* Background Music Element */}
-      {backgroundMusic && (
-        <audio 
-          ref={backgroundAudioRef} 
-          src={backgroundMusic} 
-          loop 
+      {/* Background Music Element — disabled for Lofinity */}
+      {/* {backgroundMusic && (
+        <audio
+          ref={backgroundAudioRef}
+          src={backgroundMusic}
+          loop
           preload="auto"
           crossOrigin="anonymous"
           playsInline
           style={{ display: 'none' }}
         />
-      )}
+      )} */}
 
       {/* Player Controls - Sticky Bottom Bar */}
       <div 
@@ -1840,12 +1935,27 @@ export function AudioPlayer({ initialTrackIndex = 0 }: AudioPlayerProps) {
               msOverflowStyle: 'none', /* Internet Explorer 10+ */
             }}
           >
+            {/* Shuffle Button */}
+            <Button
+              variant="ghost"
+              size="icon"
+              onClick={toggleShuffle}
+              title={isShuffle ? 'Shuffle on' : 'Shuffle off'}
+              className={`h-9 w-9 md:h-12 md:w-12 flex-shrink-0 hover:bg-white/10 transition-colors ${
+                isShuffle
+                  ? 'text-[hsl(var(--primary))] hover:text-[hsl(var(--primary))]'
+                  : 'text-white hover:text-[hsl(var(--control-hover))]'
+              }`}
+            >
+              <Shuffle className="h-4 w-4 md:h-5 md:w-5" />
+            </Button>
+
             <Button
               variant="ghost"
               size="icon"
               onClick={() => {
                 console.log('🎵 [AUDIO SYNC] Previous button clicked!');
-                handlePrevious(false); // Changed from true to false - no auto-play
+                handlePrevious(isPlaying);
               }}
               className="text-white hover:text-[hsl(var(--control-hover))] hover:bg-white/10 h-9 w-9 md:h-12 md:w-12 flex-shrink-0"
             >
@@ -1877,11 +1987,26 @@ export function AudioPlayer({ initialTrackIndex = 0 }: AudioPlayerProps) {
               size="icon"
               onClick={() => {
                 console.log('🎵 [AUDIO SYNC] Next button clicked!');
-                handleNext(false); // Changed from true to false - no auto-play
+                handleNext(isPlaying);
               }}
               className="text-white hover:text-[hsl(var(--control-hover))] hover:bg-white/10 h-9 w-9 md:h-12 md:w-12 flex-shrink-0"
             >
               <SkipForward className="h-4 w-4 md:h-5 md:w-5" />
+            </Button>
+
+            {/* Loop Button */}
+            <Button
+              variant="ghost"
+              size="icon"
+              onClick={toggleLoop}
+              title={isLoop ? 'Loop on' : 'Loop off'}
+              className={`h-9 w-9 md:h-12 md:w-12 flex-shrink-0 hover:bg-white/10 transition-colors ${
+                isLoop
+                  ? 'text-[hsl(var(--primary))] hover:text-[hsl(var(--primary))]'
+                  : 'text-white hover:text-[hsl(var(--control-hover))]'
+              }`}
+            >
+              <Repeat className="h-4 w-4 md:h-5 md:w-5" />
             </Button>
 
             {/* Volume Control */}
@@ -1918,33 +2043,11 @@ export function AudioPlayer({ initialTrackIndex = 0 }: AudioPlayerProps) {
               </PopoverContent>
             </Popover>
 
-            {/* Background Music Control */}
-            <Popover>
-              <PopoverTrigger asChild>
-                <Button
-                  variant="ghost"
-                  size="icon"
-                  className={`text-white hover:text-[hsl(var(--control-hover))] hover:bg-white/10 h-9 w-9 md:h-12 md:w-12 flex-shrink-0 ${
-                    isBackgroundMusicPlaying ? 'text-[hsl(var(--accent))]' : ''
-                  }`}
-                >
-                  <Music className="h-4 w-4 md:h-5 md:w-5" />
-                </Button>
-              </PopoverTrigger>
+            {/* Background Music Control — disabled for Lofinity */}
+            {/* <Popover>...</Popover> */}
 
-            {/* Caption Control - Only show if captions are available */}
-            {captions.length > 0 && (
-              <Button
-                variant="ghost"
-                size="icon"
-                onClick={toggleCaptions}
-                className={`text-white hover:text-[hsl(var(--control-hover))] hover:bg-white/10 h-9 w-9 md:h-12 md:w-12 flex-shrink-0 ${
-                  isCaptionsActive ? 'text-[hsl(var(--accent))]' : ''
-                }`}
-              >
-                <Subtitles className="h-4 w-4 md:h-5 md:w-5" />
-              </Button>
-            )}
+            {/* Caption Control — disabled for Lofinity */}
+            {/* {captions.length > 0 && (...)} */}
 
             {/* Share Control */}
             <Button
@@ -1952,104 +2055,12 @@ export function AudioPlayer({ initialTrackIndex = 0 }: AudioPlayerProps) {
               size="icon"
               onClick={() => {
                 setIsShareModalOpen(true);
-                // Track share modal opening
                 trackAudioShare(track.title, currentTrack, 'modal');
               }}
               className="text-white hover:text-[hsl(var(--control-hover))] hover:bg-white/10 h-9 w-9 md:h-12 md:w-12 flex-shrink-0"
             >
               <Share2 className="h-4 w-4 md:h-5 md:w-5" />
             </Button>
-              <PopoverContent 
-                className="w-64 p-4 glass-morphism border-white/20"
-                side="top"
-                align="center"
-                sideOffset={8}
-              >
-                <div className="space-y-3">
-                  <div className="flex items-center justify-between">
-                    <div className="text-sm font-medium text-white">Background Music</div>
-                  </div>
-                  <div className="max-h-48 overflow-y-auto custom-scrollbar space-y-2">
-                    {backgroundMusicTracks.map((track) => (
-                      <div
-                        key={track.id}
-                        className={`group p-2 rounded-md cursor-pointer transition-colors ${
-                          selectedBackgroundTrack === track.id
-                            ? 'bg-[hsl(var(--accent))]/20 border border-[hsl(var(--accent))]/30'
-                            : 'hover:bg-white/10'
-                        }`}
-                        onClick={() => handleBackgroundMusicSelect(track.id)}
-                      >
-                        <div className="flex items-start justify-between">
-                          <div className="flex-1 min-w-0">
-                            <div className="text-sm font-medium text-white">{track.title}</div>
-                            <div className="text-xs text-white/60">{track.description}</div>
-                          </div>
-                          <Button
-                            variant="ghost"
-                            size="icon"
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              if (selectedBackgroundTrack === track.id && isBackgroundMusicPlaying) {
-                                stopBackgroundMusic();
-                              } else {
-                                handleBackgroundMusicSelect(track.id);
-                              }
-                            }}
-                            className={`h-6 w-6 ${
-                              selectedBackgroundTrack === track.id 
-                                ? 'opacity-100' 
-                                : 'opacity-0 group-hover:opacity-100'
-                            } text-white hover:text-white hover:bg-white/10 transition-opacity ml-2 flex-shrink-0`}
-                          >
-                            {selectedBackgroundTrack === track.id && isBackgroundMusicPlaying ? (
-                              <VolumeX className="h-3 w-3" />
-                            ) : (
-                              <Play className="h-3 w-3 ml-0.5" />
-                            )}
-                          </Button>
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                  <div className="space-y-2">
-                    <div className="flex items-center gap-3">
-                      <Button
-                        variant="ghost"
-                        size="icon"
-                        onClick={isBackgroundMusicPlaying ? stopBackgroundMusic : (lastPlayingBackgroundTrack ? resumeLastBackgroundMusic : () => activateDefaultBackgroundMusic(currentTrack))}
-                        className={`h-8 w-8 rounded-full ${
-                          isBackgroundMusicPlaying || lastPlayingBackgroundTrack
-                            ? 'bg-white/20 hover:bg-white/30 text-white' 
-                            : 'bg-white/10 hover:bg-white/20 text-white/60'
-                        }`}
-                        disabled={false}
-                      >
-                        {isBackgroundMusicPlaying ? (
-                          <VolumeX className="h-4 w-4" />
-                        ) : (
-                          <Play className="h-4 w-4 ml-0.5" />
-                        )}
-                      </Button>
-                      <div className="flex-1">
-                        <div className={`text-xs mb-3 ${selectedBackgroundTrack ? 'text-white/60' : 'text-white/30'}`}>
-                          Background Music Volume
-                        </div>
-                        <Slider
-                          value={[backgroundMusicVolume]}
-                          max={1}
-                          step={0.01}
-                          onValueChange={handleBackgroundMusicVolumeChange}
-                          className={`w-full slider-thumb touch-manipulation ${!selectedBackgroundTrack ? 'opacity-50' : ''}`}
-                          style={{ touchAction: 'none' }}
-                          disabled={!selectedBackgroundTrack}
-                        />
-                      </div>
-                    </div>
-                  </div>
-                </div>
-              </PopoverContent>
-            </Popover>
           </div>
         </div>
       </div>

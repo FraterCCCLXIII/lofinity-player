@@ -2,6 +2,7 @@ import { useLocation, useNavigate } from "react-router-dom";
 import { useEffect } from "react";
 import { Button } from "@/components/ui/button";
 import { Home, ArrowLeft, Search } from "lucide-react";
+import { trackNotFoundPageView } from "@/lib/analytics";
 
 const NotFound = () => {
   const location = useLocation();
@@ -12,6 +13,9 @@ const NotFound = () => {
       "404 Error: User attempted to access non-existent route:",
       location.pathname
     );
+    
+    // Track 404 page view
+    trackNotFoundPageView(location.pathname);
   }, [location.pathname]);
 
   const handleGoHome = () => {
@@ -42,7 +46,7 @@ const NotFound = () => {
             The path you're seeking doesn't exist
           </p>
           <p className="text-lg text-white/50 mb-8">
-            Like the journey of awakening, sometimes we must find our way back to the beginning
+            Lost in the cosmos — let's find our way back to the music
           </p>
         </div>
 
@@ -81,22 +85,22 @@ const NotFound = () => {
           </p>
           <div className="flex flex-wrap justify-center gap-2 text-sm">
             <button
-              onClick={() => navigate("/track/what-is-ego-death")}
+              onClick={() => navigate("/track/celestia-i")}
               className="px-3 py-1 rounded-full bg-white/5 hover:bg-white/10 text-white/70 hover:text-white transition-colors duration-200"
             >
-              What is Ego Death?
+              Celestia I
             </button>
             <button
-              onClick={() => navigate("/track/what-is-non-duality")}
+              onClick={() => navigate("/track/starfields-in-bloom")}
               className="px-3 py-1 rounded-full bg-white/5 hover:bg-white/10 text-white/70 hover:text-white transition-colors duration-200"
             >
-              What is Non-Duality?
+              Starfields in Bloom
             </button>
             <button
-              onClick={() => navigate("/track/the-four-selves")}
+              onClick={() => navigate("/track/kosmographica")}
               className="px-3 py-1 rounded-full bg-white/5 hover:bg-white/10 text-white/70 hover:text-white transition-colors duration-200"
             >
-              The Four Selves
+              Kosmographica
             </button>
           </div>
         </div>

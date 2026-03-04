@@ -7,10 +7,10 @@ const Header = () => {
       <div className="absolute top-4 left-1/2 transform -translate-x-1/2 z-10 text-center">
         <div className="flex flex-col items-center">
           <div className="flex items-center gap-2">
-            <h1 className="text-xl md:text-4xl font-bold text-white font-sans">Nondualize</h1>
+            <h1 className="text-xl md:text-4xl font-bold text-white font-sans">Lofinity</h1>
             <span className="text-[10px] md:text-xs font-medium text-white/60 bg-white/10 px-1.5 py-0.5 rounded">BETA</span>
           </div>
-          <p className="text-xs md:text-sm text-white/70 mt-1 font-light">Integral Nonduality for an Evolving World</p>
+          <p className="text-xs md:text-sm text-white/70 mt-1 font-light">Beats for the Infinite Mind</p>
         </div>
       </div>
     </header>
