@@ -629,12 +629,9 @@ export function AudioPlayer({ initialTrackIndex = 0 }: AudioPlayerProps) {
       if (isShuffle) {
         const randomIndex = getRandomNextTrack(currentTrack);
         handleNext(true, randomIndex);
-      } else if (isLoop) {
-        handleNext(true);
-      } else if (currentTrack < mockTracks.length - 1) {
+      } else {
         handleNext(true);
       }
-      // else: last track with no loop/shuffle — stop naturally
     };
     
     const handleError = (e: Event) => {
