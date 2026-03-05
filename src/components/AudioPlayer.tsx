@@ -1,5 +1,5 @@
 import { useState, useRef, useEffect, useCallback } from "react";
-import { Play, Pause, SkipBack, SkipForward, Menu, Volume2, Share2, Shuffle, Repeat } from "lucide-react";
+import { Play, Pause, SkipBack, SkipForward, Menu, Volume2, Share2, Shuffle, Repeat, Sparkles } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Slider } from "@/components/ui/slider";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
@@ -23,6 +23,12 @@ import {
   trackTrackSwitchTime,
   trackAudioPlayWithContext,
 } from "@/lib/analytics";
+import {
+  AUTO_MIX_FADE_SECONDS,
+  AUTO_MIX_LOOKAHEAD_SECONDS,
+  estimateTrackBpm,
+  getBeatMatchedPlaybackRate,
+} from "@/lib/autoMix";
 
 // Extend Window interface for mobile Safari detection timeout
 declare global {
@@ -310,7 +316,12 @@ export function AudioPlayer({ initialTrackIndex = 0 }: AudioPlayerProps) {
   const [isPageVisible, setIsPageVisible] = useState(true);
   const [isShuffle, setIsShuffle] = useState(false);
   const [isLoop, setIsLoop] = useState(false);
+  const [isAutoMixEnabled, setIsAutoMixEnabled] = useState<boolean>(() => {
+    if (typeof window === "undefined") return false;
+    return window.localStorage.getItem("isAutoMixEnabled") === "true";
+  });
   const audioRef = useRef<HTMLAudioElement>(null);
+  const autoMixDeckRef = useRef<HTMLAudioElement>(null);
   const backgroundAudioRef = useRef<HTMLAudioElement>(null);
   const gainNodeRef = useRef<GainNode | null>(null);
   const backgroundGainNodeRef = useRef<GainNode | null>(null);
@@ -326,6 +337,15 @@ export function AudioPlayer({ initialTrackIndex = 0 }: AudioPlayerProps) {
   const iosMasterGainRef = useRef<GainNode | null>(null);
   const iosVoiceSourceRef = useRef<MediaElementAudioSourceNode | null>(null);
   const iosMusicSourceRef = useRef<MediaElementAudioSourceNode | null>(null);
+  const autoMixInProgressRef = useRef(false);
+  const autoMixFadeRafRef = useRef<number | null>(null);
+  const autoMixPromotionCompleteRef = useRef(false);
+  const suppressMainAudioEventsRef = useRef(false);
+  const endRecoveryTriggeredTrackRef = useRef<number | null>(null);
+  const nearEndDebugSecondRef = useRef<number>(-1);
+  const currentTrackRef = useRef(currentTrack);
+  const isShuffleRef = useRef(isShuffle);
+  const isAutoMixEnabledRef = useRef(isAutoMixEnabled);
 
 
   const track = mockTracks[currentTrack];
@@ -463,6 +483,23 @@ export function AudioPlayer({ initialTrackIndex = 0 }: AudioPlayerProps) {
     console.log('🎵 [AUDIO SYNC] currentTrack changed to:', currentTrack, 'track:', track.title, 'at', new Date().toISOString());
   }, [currentTrack, track.title]);
 
+  useEffect(() => {
+    currentTrackRef.current = currentTrack;
+    isShuffleRef.current = isShuffle;
+    isAutoMixEnabledRef.current = isAutoMixEnabled;
+  }, [currentTrack, isShuffle, isAutoMixEnabled]);
+
+  useEffect(() => {
+    if (typeof window !== "undefined") {
+      window.localStorage.setItem("isAutoMixEnabled", String(isAutoMixEnabled));
+    }
+    console.log("🎚️ [AUTOMIX DEBUG] AutoMix state changed", {
+      isAutoMixEnabled,
+      currentTrack,
+      trackTitle: track.title,
+    });
+  }, [isAutoMixEnabled, currentTrack, track.title]);
+
   // Initialize audio element with initial track
   useEffect(() => {
     const audio = audioRef.current;
@@ -567,20 +604,71 @@ export function AudioPlayer({ initialTrackIndex = 0 }: AudioPlayerProps) {
   useEffect(() => {
     const audio = audioRef.current;
     if (!audio) return;
+    const normalizedPath = (url: string) => decodeURIComponent(new URL(url, window.location.origin).pathname);
+    const getActiveTrackIndexFromAudioSrc = () => {
+      if (!audio.src) return -1;
+      const currentPath = normalizedPath(audio.src);
+      return mockTracks.findIndex((candidate) => normalizedPath(resolveAudioUrl(candidate.audioUrl)) === currentPath);
+    };
 
     const updateTime = () => {
+      if (suppressMainAudioEventsRef.current) {
+        return;
+      }
       const newTime = audio.currentTime;
+      const stateTrackIndex = currentTrackRef.current;
+      const activeTrackIndex = getActiveTrackIndexFromAudioSrc();
+      const activeTrack = mockTracks[activeTrackIndex] ?? mockTracks[stateTrackIndex];
       console.log('🎵 [AUDIO SYNC] timeupdate event:', {
         currentTime: newTime,
         duration: audio.duration,
         readyState: audio.readyState,
         paused: audio.paused,
+        stateTrackIndex,
+        activeTrackIndex,
         timestamp: new Date().toISOString()
       });
       setCurrentTime(newTime);
+      if (Number.isFinite(audio.duration) && audio.duration > 0) {
+        const remainingTime = audio.duration - newTime;
+        if (remainingTime <= 5) {
+          const roundedRemaining = Math.max(0, Math.floor(remainingTime));
+          if (roundedRemaining !== nearEndDebugSecondRef.current) {
+            nearEndDebugSecondRef.current = roundedRemaining;
+            console.log("🎚️ [AUTOMIX DEBUG] Near track end", {
+              currentTrack: stateTrackIndex,
+              trackTitle: activeTrack?.title,
+              currentTime: newTime,
+              duration: audio.duration,
+              remainingTime,
+              isAutoMixEnabled: isAutoMixEnabledRef.current,
+              isPlaying,
+              autoMixInProgress: autoMixInProgressRef.current,
+              mixDeckPaused: autoMixDeckRef.current?.paused,
+              mixDeckTime: autoMixDeckRef.current?.currentTime,
+            });
+          }
+        }
+      }
+
+      if (
+        isAutoMixEnabledRef.current &&
+        isPlaying &&
+        !autoMixInProgressRef.current &&
+        Number.isFinite(audio.duration) &&
+        audio.duration > 0
+      ) {
+        const remainingTime = audio.duration - newTime;
+        if (remainingTime <= AUTO_MIX_LOOKAHEAD_SECONDS) {
+          void runAutoMixTransition();
+        }
+      }
     };
     
     const updateDuration = () => {
+      if (suppressMainAudioEventsRef.current) {
+        return;
+      }
       console.log('🎵 [AUDIO SYNC] loadedmetadata event:', {
         duration: audio.duration,
         src: audio.src,
@@ -591,45 +679,157 @@ export function AudioPlayer({ initialTrackIndex = 0 }: AudioPlayerProps) {
     };
     
     const handlePlay = () => {
+      if (suppressMainAudioEventsRef.current) {
+        return;
+      }
+      const stateTrackIndex = currentTrackRef.current;
+      const activeTrackIndex = getActiveTrackIndexFromAudioSrc();
+      const analyticsTrackIndex = activeTrackIndex !== -1 ? activeTrackIndex : stateTrackIndex;
+      const analyticsTrack = mockTracks[analyticsTrackIndex];
       console.log('🎵 [AUDIO SYNC] play event fired:', {
         currentTime: audio.currentTime,
         duration: audio.duration,
         src: audio.src,
         readyState: audio.readyState,
+        stateTrackIndex,
+        activeTrackIndex,
         timestamp: new Date().toISOString()
       });
       setIsPlaying(true);
       
       // Track audio play event with enhanced context
-      const trackSlug = getTrackSlug(currentTrack);
+      const trackSlug = getTrackSlug(analyticsTrackIndex);
       trackAudioPlayWithContext(
-        track.title, 
+        analyticsTrack.title, 
         trackSlug, 
-        currentTrack, 
+        analyticsTrackIndex, 
         audio.duration,
         'user_click'
       );
     };
     
     const handlePause = () => {
+      if (suppressMainAudioEventsRef.current) {
+        console.log("🎚️ [AUTOMIX DEBUG] Suppressed pause event during handoff");
+        return;
+      }
+      const stateTrackIndex = currentTrackRef.current;
+      const activeTrackIndex = getActiveTrackIndexFromAudioSrc();
+      if (activeTrackIndex !== -1 && activeTrackIndex !== stateTrackIndex) {
+        console.log("🎚️ [AUTOMIX DEBUG] Ignoring stale pause event", {
+          stateTrackIndex,
+          activeTrackIndex,
+          src: audio.src,
+        });
+        return;
+      }
       console.log('🎵 [AUDIO SYNC] pause event fired:', {
         currentTime: audio.currentTime,
         duration: audio.duration,
         src: audio.src,
         timestamp: new Date().toISOString()
       });
+
+      // Debug + recovery: in some browser/device cases we see pause fire at end without
+      // a reliable ended transition. If this is a natural end and no automix blend is active,
+      // force next track once.
+      const hasFiniteDuration = Number.isFinite(audio.duration) && audio.duration > 0;
+      const remainingTime = hasFiniteDuration ? audio.duration - audio.currentTime : Number.POSITIVE_INFINITY;
+      if (
+        hasFiniteDuration &&
+        remainingTime <= 0.25 &&
+        !autoMixInProgressRef.current &&
+        endRecoveryTriggeredTrackRef.current !== stateTrackIndex
+      ) {
+        endRecoveryTriggeredTrackRef.current = stateTrackIndex;
+        console.warn("🎚️ [AUTOMIX DEBUG] Pause-at-end recovery triggered", {
+          currentTrack: stateTrackIndex,
+          trackTitle: mockTracks[stateTrackIndex].title,
+          currentTime: audio.currentTime,
+          duration: audio.duration,
+          remainingTime,
+          isAutoMixEnabled: isAutoMixEnabledRef.current,
+          isShuffle: isShuffleRef.current,
+        });
+
+        if (isShuffleRef.current) {
+          const randomIndex = getRandomNextTrack(stateTrackIndex);
+          handleNext(true, randomIndex);
+        } else {
+          handleNext(true);
+        }
+        return;
+      }
       setIsPlaying(false);
       
       // Track audio pause event
-      trackAudioPause(track.title, currentTrack, audio.currentTime);
+      trackAudioPause(mockTracks[stateTrackIndex].title, stateTrackIndex, audio.currentTime);
     };
     
     const handleEnded = () => {
+      if (suppressMainAudioEventsRef.current) {
+        console.log("🎚️ [AUTOMIX DEBUG] Suppressed ended event during handoff");
+        return;
+      }
+      const stateTrackIndex = currentTrackRef.current;
+      const activeTrackIndex = getActiveTrackIndexFromAudioSrc();
+      if (activeTrackIndex !== -1 && activeTrackIndex !== stateTrackIndex) {
+        console.log("🎚️ [AUTOMIX DEBUG] Ignoring stale ended event", {
+          stateTrackIndex,
+          activeTrackIndex,
+          src: audio.src,
+        });
+        return;
+      }
+      console.log("🎚️ [AUTOMIX DEBUG] ended event", {
+        currentTrack: stateTrackIndex,
+        trackTitle: mockTracks[stateTrackIndex].title,
+        isAutoMixEnabled: isAutoMixEnabledRef.current,
+        isShuffle: isShuffleRef.current,
+        isLoop,
+        autoMixInProgress: autoMixInProgressRef.current,
+        mixDeckPaused: autoMixDeckRef.current?.paused,
+        mixDeckTime: autoMixDeckRef.current?.currentTime,
+      });
+      if (isAutoMixEnabledRef.current) {
+        if (autoMixInProgressRef.current && !autoMixPromotionCompleteRef.current) {
+          console.warn("🎚️ [AUTOMIX DEBUG] ended while automix stalled; forcing fallback next");
+          autoMixInProgressRef.current = false;
+          if (isShuffleRef.current) {
+            const randomIndex = getRandomNextTrack(stateTrackIndex);
+            handleNext(true, randomIndex);
+          } else {
+            handleNext(true);
+          }
+          return;
+        }
+
+        // If automix is still in progress when ended fires, avoid duplicate next-track calls.
+        // If no incoming deck is actually playing, recover by advancing normally.
+        const mixDeck = autoMixDeckRef.current;
+        const hasIncomingPlayback = !!mixDeck && !mixDeck.paused && mixDeck.currentTime > 0;
+        if (autoMixInProgressRef.current && hasIncomingPlayback) {
+          return;
+        }
+
+        if (isShuffleRef.current) {
+          const randomIndex = getRandomNextTrack(stateTrackIndex);
+          console.log("🎚️ [AUTOMIX DEBUG] ended -> handleNext shuffle", { randomIndex });
+          handleNext(true, randomIndex);
+        } else {
+          console.log("🎚️ [AUTOMIX DEBUG] ended -> handleNext sequential");
+          handleNext(true);
+        }
+        return;
+      }
+
       console.log('🎵 [AUDIO SYNC] ended event fired', { isShuffle, isLoop, currentTrack });
-      if (isShuffle) {
-        const randomIndex = getRandomNextTrack(currentTrack);
+      if (isShuffleRef.current) {
+        const randomIndex = getRandomNextTrack(stateTrackIndex);
+        console.log("🎚️ [AUTOMIX DEBUG] ended(non-automix) -> handleNext shuffle", { randomIndex });
         handleNext(true, randomIndex);
       } else {
+        console.log("🎚️ [AUTOMIX DEBUG] ended(non-automix) -> handleNext sequential");
         handleNext(true);
       }
     };
@@ -691,7 +891,51 @@ export function AudioPlayer({ initialTrackIndex = 0 }: AudioPlayerProps) {
       audio.removeEventListener('canplay', handleCanPlay);
       audio.removeEventListener('canplaythrough', handleCanPlayThrough);
     };
-  }, [currentTrack, isShuffle, isLoop]); // Removed isPlaying dependency to prevent listener recreation
+  }, [currentTrack, isShuffle, isLoop, isAutoMixEnabled, isPlaying, track.title]); // Removed isPlaying dependency to prevent listener recreation
+
+  useEffect(() => {
+    endRecoveryTriggeredTrackRef.current = null;
+    nearEndDebugSecondRef.current = -1;
+  }, [currentTrack]);
+
+  useEffect(() => {
+    const mixDeck = autoMixDeckRef.current;
+    if (!mixDeck) return;
+
+    const logDeck = (eventName: string) => {
+      console.log("🎚️ [AUTOMIX DEBUG] deck event", {
+        event: eventName,
+        src: mixDeck.src,
+        currentTime: mixDeck.currentTime,
+        duration: mixDeck.duration,
+        readyState: mixDeck.readyState,
+        paused: mixDeck.paused,
+      });
+    };
+
+    const onLoadStart = () => logDeck("loadstart");
+    const onCanPlay = () => logDeck("canplay");
+    const onPlay = () => logDeck("play");
+    const onPause = () => logDeck("pause");
+    const onError = () => logDeck("error");
+    const onEnded = () => logDeck("ended");
+
+    mixDeck.addEventListener("loadstart", onLoadStart);
+    mixDeck.addEventListener("canplay", onCanPlay);
+    mixDeck.addEventListener("play", onPlay);
+    mixDeck.addEventListener("pause", onPause);
+    mixDeck.addEventListener("error", onError);
+    mixDeck.addEventListener("ended", onEnded);
+
+    return () => {
+      mixDeck.removeEventListener("loadstart", onLoadStart);
+      mixDeck.removeEventListener("canplay", onCanPlay);
+      mixDeck.removeEventListener("play", onPlay);
+      mixDeck.removeEventListener("pause", onPause);
+      mixDeck.removeEventListener("error", onError);
+      mixDeck.removeEventListener("ended", onEnded);
+    };
+  }, [isAutoMixEnabled, currentTrack]);
 
   // Handle background music playback and volume
   useEffect(() => {
@@ -1092,9 +1336,25 @@ export function AudioPlayer({ initialTrackIndex = 0 }: AudioPlayerProps) {
       });
       audio.pause();
       audio.currentTime = 0;
+      // Prevent residual gain from previous transitions (e.g. automix handoff)
+      audio.volume = volume;
     } else {
       console.warn('🎵 [AUDIO SYNC] Main audio element not found in stopAllAudio');
     }
+
+    const autoMixDeck = autoMixDeckRef.current;
+    if (autoMixDeck) {
+      autoMixDeck.pause();
+      autoMixDeck.currentTime = 0;
+      autoMixDeck.volume = 0;
+      autoMixDeck.playbackRate = 1;
+    }
+
+    if (autoMixFadeRafRef.current !== null) {
+      cancelAnimationFrame(autoMixFadeRafRef.current);
+      autoMixFadeRafRef.current = null;
+    }
+    autoMixInProgressRef.current = false;
     
     // Stop background audio
     const backgroundAudio = backgroundAudioRef.current;
@@ -1205,6 +1465,7 @@ export function AudioPlayer({ initialTrackIndex = 0 }: AudioPlayerProps) {
           audio.currentTime = currentTime;
         }
         
+        audio.volume = volume;
         setIsPlaying(true);
         
         audio.play().then(async () => {
@@ -1258,6 +1519,198 @@ export function AudioPlayer({ initialTrackIndex = 0 }: AudioPlayerProps) {
     }
   };
 
+  const runAutoMixTransition = useCallback(async () => {
+    if (autoMixInProgressRef.current) return;
+
+    const mainAudio = audioRef.current;
+    const mixDeck = autoMixDeckRef.current;
+    if (!mainAudio || !mixDeck || !isPlaying) return;
+
+    const nextTrackIndex = isShuffle
+      ? getRandomNextTrack(currentTrack)
+      : (currentTrack === mockTracks.length - 1 ? 0 : currentTrack + 1);
+    const nextTrack = mockTracks[nextTrackIndex];
+    const nextTrackUrl = resolveAudioUrl(nextTrack.audioUrl);
+
+    autoMixInProgressRef.current = true;
+    autoMixPromotionCompleteRef.current = false;
+    setIsTransitioning(true);
+    console.log("🎚️ [AUTOMIX DEBUG] runAutoMixTransition started", {
+      currentTrack,
+      nextTrackIndex,
+      nextTrackTitle: nextTrack.title,
+      nextTrackUrl,
+      mainAudioCurrentTime: mainAudio.currentTime,
+      mainAudioDuration: mainAudio.duration,
+    });
+
+    const waitForCanPlay = new Promise<void>((resolve, reject) => {
+      const timeoutId = window.setTimeout(() => {
+        cleanup();
+        reject(new Error("AutoMix deck load timed out"));
+      }, 8000);
+
+      const onCanPlay = () => {
+        cleanup();
+        resolve();
+      };
+
+      const onError = () => {
+        cleanup();
+        reject(new Error("AutoMix deck failed to load"));
+      };
+
+      const cleanup = () => {
+        window.clearTimeout(timeoutId);
+        mixDeck.removeEventListener("canplay", onCanPlay);
+        mixDeck.removeEventListener("error", onError);
+      };
+
+      mixDeck.addEventListener("canplay", onCanPlay);
+      mixDeck.addEventListener("error", onError);
+    });
+
+    try {
+      mixDeck.src = nextTrackUrl;
+      mixDeck.currentTime = 0;
+      mixDeck.playbackRate = 1;
+      mixDeck.volume = 0;
+      mixDeck.load();
+      await waitForCanPlay;
+      console.log("🎚️ [AUTOMIX DEBUG] mix deck canplay; starting BPM analysis");
+
+      const [currentBpm, nextBpm] = await Promise.all([
+        estimateTrackBpm(resolveAudioUrl(mockTracks[currentTrack].audioUrl)),
+        estimateTrackBpm(nextTrackUrl),
+      ]);
+      mixDeck.playbackRate = getBeatMatchedPlaybackRate(currentBpm, nextBpm);
+      console.log("🎚️ [AUTOMIX DEBUG] beat match computed", {
+        currentBpm,
+        nextBpm,
+        playbackRate: mixDeck.playbackRate,
+      });
+
+      await mixDeck.play();
+      console.log("🎚️ [AUTOMIX DEBUG] mix deck playback started");
+
+      const baseVolume = Math.max(0, Math.min(1, volume));
+      const fadeDurationMs = AUTO_MIX_FADE_SECONDS * 1000;
+      const fadeStart = performance.now();
+
+      await new Promise<void>((resolve, reject) => {
+        const clamp01 = (value: number) => Math.max(0, Math.min(1, value));
+        const step = (now: number) => {
+          try {
+            const progress = clamp01((now - fadeStart) / fadeDurationMs);
+            mainAudio.volume = clamp01(baseVolume * (1 - progress));
+            mixDeck.volume = clamp01(baseVolume * progress);
+
+            if (progress < 1) {
+              autoMixFadeRafRef.current = requestAnimationFrame(step);
+            } else {
+              autoMixFadeRafRef.current = null;
+              resolve();
+            }
+          } catch (error) {
+            autoMixFadeRafRef.current = null;
+            reject(error);
+          }
+        };
+
+        autoMixFadeRafRef.current = requestAnimationFrame(step);
+      });
+
+      // Seamless handoff: keep mixDeck playing while the main deck is prepared,
+      // then do a short transfer crossfade to avoid an audible break.
+      const carryTime = mixDeck.currentTime;
+      suppressMainAudioEventsRef.current = true;
+      mainAudio.pause();
+      mainAudio.src = nextTrackUrl;
+      mainAudio.playbackRate = 1;
+      mainAudio.load();
+
+      await new Promise<void>((resolve, reject) => {
+        const timeoutId = window.setTimeout(() => {
+          cleanup();
+          reject(new Error("Main deck handoff timed out"));
+        }, 5000);
+
+        const onCanPlay = () => {
+          cleanup();
+          resolve();
+        };
+
+        const onError = () => {
+          cleanup();
+          reject(new Error("Main deck handoff failed to load"));
+        };
+
+        const cleanup = () => {
+          window.clearTimeout(timeoutId);
+          mainAudio.removeEventListener("canplay", onCanPlay);
+          mainAudio.removeEventListener("error", onError);
+        };
+
+        mainAudio.addEventListener("canplay", onCanPlay);
+        mainAudio.addEventListener("error", onError);
+      });
+
+      const safeCarryTime = Math.max(
+        0,
+        Math.min(carryTime, Math.max(0, (mainAudio.duration || nextTrack.duration) - 0.05)),
+      );
+      mainAudio.currentTime = safeCarryTime;
+      mainAudio.volume = 0;
+      await mainAudio.play();
+
+      const handoffDurationMs = 220;
+      const handoffStart = performance.now();
+      await new Promise<void>((resolve) => {
+        const clamp01 = (value: number) => Math.max(0, Math.min(1, value));
+        const step = (now: number) => {
+          const progress = clamp01((now - handoffStart) / handoffDurationMs);
+          mainAudio.volume = clamp01(baseVolume * progress);
+          mixDeck.volume = clamp01(baseVolume * (1 - progress));
+          if (progress < 1) {
+            requestAnimationFrame(step);
+          } else {
+            resolve();
+          }
+        };
+        requestAnimationFrame(step);
+      });
+
+      setCurrentTrack(nextTrackIndex);
+      updateTrackUrl(nextTrackIndex);
+      setCurrentTime(safeCarryTime);
+      setDuration(mixDeck.duration || nextTrack.duration);
+      setIsPlaying(true);
+      autoMixPromotionCompleteRef.current = true;
+      console.log("🎚️ [AUTOMIX DEBUG] transition complete; main deck promoted", {
+        nextTrackIndex,
+        carryTime: safeCarryTime,
+      });
+
+      mixDeck.pause();
+      mixDeck.currentTime = 0;
+      mixDeck.volume = 0;
+      mixDeck.playbackRate = 1;
+      suppressMainAudioEventsRef.current = false;
+    } catch (error) {
+      console.error("🎚️ [AUTOMIX] Transition failed, falling back to next track:", error);
+      suppressMainAudioEventsRef.current = false;
+      handleNext(true, nextTrackIndex);
+    } finally {
+      setIsTransitioning(false);
+      autoMixInProgressRef.current = false;
+      autoMixPromotionCompleteRef.current = false;
+      suppressMainAudioEventsRef.current = false;
+      console.log("🎚️ [AUTOMIX DEBUG] runAutoMixTransition finished", {
+        currentTrackAfter: currentTrack,
+      });
+    }
+  }, [currentTrack, isPlaying, isShuffle, volume]);
+
   const handlePrevious = (autoPlay: boolean = false) => {
     const newTrackIndex = currentTrack === 0 ? mockTracks.length - 1 : currentTrack - 1;
     
@@ -1283,6 +1736,7 @@ export function AudioPlayer({ initialTrackIndex = 0 }: AudioPlayerProps) {
       // Set new audio source immediately
       audio.src = resolveAudioUrl(mockTracks[newTrackIndex].audioUrl);
       audio.load();
+      audio.volume = volume;
       
       // Mark user interaction for mobile browsers
       setHasUserInteracted(true);
@@ -1294,6 +1748,7 @@ export function AudioPlayer({ initialTrackIndex = 0 }: AudioPlayerProps) {
           
           // Resume audio context if suspended (important for mobile)
           await resumeAudioContext();
+          audio.volume = volume;
           
           audio.play().then(() => {
             console.log('🎵 [AUDIO SYNC] Previous track play() promise resolved successfully:', {
@@ -1379,6 +1834,7 @@ export function AudioPlayer({ initialTrackIndex = 0 }: AudioPlayerProps) {
       // Set new audio source immediately
       audio.src = resolveAudioUrl(mockTracks[newTrackIndex].audioUrl);
       audio.load();
+      audio.volume = volume;
       
       console.log('🎵 [AUDIO SYNC] Audio source set and loaded:', {
         newSrc: audio.src,
@@ -1405,6 +1861,7 @@ export function AudioPlayer({ initialTrackIndex = 0 }: AudioPlayerProps) {
           
           // Resume audio context if suspended (important for mobile)
           await resumeAudioContext();
+          audio.volume = volume;
           
           console.log('🎵 [AUDIO SYNC] Attempting to play audio...');
           audio.play().then(() => {
@@ -1577,6 +2034,7 @@ export function AudioPlayer({ initialTrackIndex = 0 }: AudioPlayerProps) {
       // Set the new audio source immediately
       audio.src = newAudioUrl;
       audio.load();
+      audio.volume = volume;
       
       // Mark that user has interacted (since they selected a track)
       setHasUserInteracted(true);
@@ -1616,6 +2074,14 @@ export function AudioPlayer({ initialTrackIndex = 0 }: AudioPlayerProps) {
     setIsLoop(prev => {
       if (!prev) setIsShuffle(false);
       return !prev;
+    });
+  };
+
+  const toggleAutoMix = () => {
+    setIsAutoMixEnabled((previous) => {
+      const next = !previous;
+      console.log("🎚️ [AUTOMIX DEBUG] toggleAutoMix", { previous, next });
+      return next;
     });
   };
 
@@ -1874,6 +2340,14 @@ export function AudioPlayer({ initialTrackIndex = 0 }: AudioPlayerProps) {
         onCanPlay={() => {
         }}
       />
+
+      <audio
+        ref={autoMixDeckRef}
+        preload="metadata"
+        crossOrigin="anonymous"
+        playsInline
+        style={{ display: "none" }}
+      />
       
       {/* Background Music Element — disabled for Lofinity */}
       {/* {backgroundMusic && (
@@ -2004,6 +2478,20 @@ export function AudioPlayer({ initialTrackIndex = 0 }: AudioPlayerProps) {
               }`}
             >
               <Repeat className="h-4 w-4 md:h-5 md:w-5" />
+            </Button>
+
+            <Button
+              variant="ghost"
+              size="icon"
+              onClick={toggleAutoMix}
+              title={isAutoMixEnabled ? "AutoMix on" : "AutoMix off"}
+              className={`h-9 w-9 md:h-12 md:w-12 flex-shrink-0 hover:bg-white/10 transition-colors ${
+                isAutoMixEnabled
+                  ? "text-[hsl(var(--primary))] hover:text-[hsl(var(--primary))]"
+                  : "text-white hover:text-[hsl(var(--control-hover))]"
+              }`}
+            >
+              <Sparkles className="h-4 w-4 md:h-5 md:w-5" />
             </Button>
 
             {/* Volume Control */}
